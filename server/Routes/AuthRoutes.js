@@ -1,5 +1,6 @@
 import express from "express";
 import { googleAuth, sendOtp, signin, signup } from "../Controllers/AuthControllers.js";
+import auth from "../Middleware/authMiddleware.js";
 
 const AuthRouter = express.Router();
 
