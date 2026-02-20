@@ -1,18 +1,18 @@
 import chatModel from "../Models/ChatModel.js";
-import Booking from  "../Models/BookingModel.js";
+import Booking from "../Models/BookingModel.js";
+import CustomerProfile from "../Models/CustomerProfileModel.js";
+import Worker from "../Models/WorkerModel.js";
 
-
- const getOrCreateChat = async (req, res) => {
+const getOrCreateChat = async (req, res) => {
   try {
     const { bookingId } = req.params;
-    const userId = req.user._id; // from auth middleware
+    const userId = req.user._id;
 
     const booking = await Booking.findById(bookingId);
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
 
-    // Allow only booked customer or worker
     if (
       booking.customerId.toString() !== userId.toString() &&
       booking.workerId.toString() !== userId.toString()
@@ -30,12 +30,28 @@ import Booking from  "../Models/BookingModel.js";
       });
     }
 
-    res.json({ success: true, chat });
+    /* ✅ Fetch actual profile names */
+    const customerProfile = await CustomerProfile.findOne({
+      userId: chat.customerId,
+    }).select("name");
+
+    const workerProfile = await Worker.findOne({
+      userId: chat.workerId,
+    }).select("name");
+
+    res.json({
+      success: true,
+      chat: {
+        ...chat.toObject(),
+        customer: customerProfile,
+        worker: workerProfile,
+      },
+    });
 
   } catch (error) {
-    console.error(error);
+    console.error("Get/Create Chat Error:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
 
-export { getOrCreateChat }
+export { getOrCreateChat };

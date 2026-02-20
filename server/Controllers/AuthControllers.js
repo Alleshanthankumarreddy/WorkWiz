@@ -103,7 +103,7 @@ const signup = async (req, res) => {
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const googleAuth = async (req, res) => {
+const googleAuthSignup = async (req, res) => {
   try {
     const { token, role} = req.body;
 
@@ -169,6 +169,83 @@ const googleAuth = async (req, res) => {
     });
   }
 };
+
+const googleAuthSignin = async (req, res) => {
+  try {
+    const { token, role } = req.body;
+
+    // ✅ Validate role
+    if (!["customer", "worker"].includes(role)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role",
+      });
+    }
+
+    // ✅ Verify Google ID token
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const { email, sub: googleId } = payload;
+
+    // ✅ User must already exist
+    const user = await userModel.findOne({ email });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "Account not found. Please sign up first.",
+      });
+    }
+
+    // ❌ Prevent role mismatch
+    if (user.role !== role) {
+      return res.status(403).json({
+        success: false,
+        message: `This account is registered as ${user.role}`,
+      });
+    }
+
+    // ❌ Ensure this account was created via Google
+    if (!user.googleId) {
+      return res.status(403).json({
+        success: false,
+        message: "This account was created using email & password",
+      });
+    }
+
+    // ✅ Generate JWT
+    const jwtToken = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // ✅ Successful signin response
+    return res.status(200).json({
+      success: true,
+      message: "Google signin successful",
+      token: jwtToken,
+      role: user.role,
+      profileCompleted: user.isProfileCompleted,
+      user: {
+        email: user.email,
+        role: user.role,
+        isProfileCompleted: user.isProfileCompleted,
+      },
+    });
+  } catch (error) {
+    console.error("Google Signin Error:", error);
+    return res.status(401).json({
+      success: false,
+      message: "Google signin failed",
+    });
+  }
+};
+
 
 
 const sendOtp = async (req, res) => {
@@ -246,7 +323,7 @@ const sendOtp = async (req, res) => {
 
 const signin = async (req, res) => {
   try {
-    const { email, password, role } = req.body;
+    const { email, password, role, fcmToken } = req.body; // include fcmToken
 
     if (!email || !password || !role) {
       return res.status(400).json({
@@ -294,11 +371,12 @@ const signin = async (req, res) => {
       });
     }
 
+    // ✅ Update FCM token if provided
+    if (fcmToken) {
+      user.fcmToken = fcmToken;
+    }
 
-
-    await user.save();
-
-
+    await user.save(); // save user with updated fcmToken
 
     const token = jwt.sign(
       { userId: user._id, role: user.role },
@@ -306,15 +384,14 @@ const signin = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-
-
-    // ✅ Send the full user object to the frontend
+    // Send the user object to frontend
     const userForFrontend = {
       _id: user._id,
       name: user.name,
       email: user.email,
       role: user.role,
       isProfileCompleted: user.isProfileCompleted,
+      fcmToken: user.fcmToken, // optional: send FCM token back
     };
 
     return res.status(200).json({
@@ -322,7 +399,7 @@ const signin = async (req, res) => {
       message: "Signin successful",
       token,
       role: user.role,
-      user: userForFrontend, // 🔥 send user
+      user: userForFrontend,
       profileCompleted: user.isProfileCompleted,
     });
   } catch (error) {
@@ -336,4 +413,5 @@ const signin = async (req, res) => {
 
 
 
-export { signup, googleAuth, sendOtp, signin }
+
+export { signup, googleAuthSignup, sendOtp, signin, googleAuthSignin }

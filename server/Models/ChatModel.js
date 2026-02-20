@@ -17,7 +17,7 @@ const chatSchema = new mongoose.Schema(
 
     workerId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Worker",
+      ref: "User",
       required: true
     },
 

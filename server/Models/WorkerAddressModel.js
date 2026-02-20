@@ -2,15 +2,25 @@ import mongoose from "mongoose";
 
 const workerAddressSchema = new mongoose.Schema(
   {
-    workerId: {
+    userId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "Worker",
+      ref: "User",
       required: true
     },
 
-    addressText: {
-      type: String,
-      required: true
+    addressDetails: {
+      houseNumber: { type: String },
+      street: { type: String },
+      area: { type: String },
+      landmark: { type: String },
+      city: { type: String, required: true },
+      district: { type: String },
+      state: { type: String, required: true },
+      country: { type: String, default: "India" },
+      pincode: {
+        type: String,
+        match: [/^\d{6}$/, "Invalid pincode"]
+      }
     },
 
     latitude: {

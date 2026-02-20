@@ -53,7 +53,7 @@ import chatModel from "../Models/ChatModel.js";
 import userModel from "../Models/UserModel.js";
 import {sendPushNotification} from "../Utils/sendPushNotification.js";
 
-const onlineUsers = new Map(); // userId -> socketId
+const onlineUsers = new Map();
 
 const initChatSocket = (server) => {
   const io = new Server(server, {
@@ -63,11 +63,18 @@ const initChatSocket = (server) => {
   io.on("connection", (socket) => {
     console.log("🔌 User connected:", socket.id);
 
-    // 🟢 Register user as online
-    socket.on("register_user", (userId) => {
-      onlineUsers.set(userId, socket.id);
-      console.log("✅ User online:", userId);
-    });
+    // // 🟢 Register user as online
+    // socket.on("register_user", (userId) => {
+    //   onlineUsers.set(userId, socket.id);
+    //   console.log("✅ User online:", userId);
+    // });
+
+  socket.on("register_user", (userId) => {
+    onlineUsers.set(userId, socket.id);
+
+    socket.join(userId.toString());   // ⭐ CRITICAL FIX
+    console.log("✅ User online:", userId);
+  });
 
     // 🟢 Join booking room
     socket.on("join_chat", ({ bookingId }) => {
@@ -75,51 +82,33 @@ const initChatSocket = (server) => {
       console.log("User joined chat room:", bookingId);
     });
 
-    // 📨 Handle message sending
-    socket.on("send_message", async (data) => {
-      try {
-        const { chatId, bookingId, senderId, senderType, messageText } = data;
+      socket.on("send_message", async (msg) => {
+    try {
+      const savedMessage = await messageModel.create({
+        chatId: msg.chatId,
+        senderType: msg.senderType,
+        senderId: msg.senderId,
+        messageText: msg.messageText,
+        isQuote: msg.isQuote || false,
+        sentAt: msg.sentAt
+      });
 
-        const newMessage = await messageModel.create({
-          chatId,
-          senderId,
-          senderType,
-          messageText,
-        });
+      io.to(msg.bookingId).emit("receive_message", {
+        ...savedMessage.toObject(),
+        quoteId: msg.quoteId   // forwarded only for UI
+      });
 
-        const chat = await chatModel.findById(chatId);
+    } catch (err) {
+      console.error("Message save error:", err);
+    }
+  });
 
-        // 🔥 Determine receiver
-        const receiverId =
-          senderType === "customer" ? chat.workerId.toString() : chat.customerId.toString();
-
-        const receiverSocket = onlineUsers.get(receiverId);
-
-        // 🟢 Send real-time message to chat room
-        io.to(bookingId).emit("receive_message", newMessage);
-
-        // 🔔 Send push notification if receiver is offline
-        if (!receiverSocket) {
-          const receiver = await userModel.findById(receiverId);
-          console.log(receiver.fcmToken);
-          if (receiver?.fcmToken) {
-            await sendPushNotification(
-              receiver.fcmToken,
-              "💬 New Message on WorkWiz",
-              messageText.length > 40 ? messageText.slice(0, 40) + "..." : messageText,
-              receiverId // 👈 ADD THIS
-            );
-
-            console.log("📲 Push sent to offline user:", receiverId);
-          }
-        }
-
-        await chatModel.findByIdAndUpdate(chatId, { lastMessageAt: Date.now() });
-
-      } catch (error) {
-        console.error("Message error:", error);
-      }
+    socket.on("typing", ({ bookingId, userId, isTyping }) => {
+    socket.to(bookingId).emit("user_typing", { userId, isTyping });
     });
+
+    
+
 
     socket.on("disconnect", () => {
       // Remove disconnected user
@@ -132,6 +121,8 @@ const initChatSocket = (server) => {
       }
     });
   });
+
+  return io;
 };
 
 export default initChatSocket;

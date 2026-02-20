@@ -16,6 +16,7 @@ const messageSchema = new mongoose.Schema(
 
     senderId: {
       type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
       required: true
     },
 
@@ -24,21 +25,24 @@ const messageSchema = new mongoose.Schema(
       trim: true
     },
 
-    messageType: {
-      type: String,
-      enum: ["text", "image", "file"],
-      default: "text"
-    },
-
     isRead: {
       type: Boolean,
       default: false
+    },
+     isQuote: {
+      type: Boolean,
+      default: false
+    },
+    quoteId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Quote",
     },
 
     sentAt: {
       type: Date,
       default: Date.now
-    }
+    },
+
   }
 );
 

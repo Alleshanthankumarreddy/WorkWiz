@@ -4,6 +4,8 @@ import userModel from "../Models/UserModel.js";
 import paymentModel from "../Models/PaymentModel.js";
 import razorpayInstance from "../Config/razorpay.js";
 import otpModel from "../Models/OtpModel.js";
+import workerBankModel from "../Models/WorkerBankDetailsModel.js";
+import customerProfileModel from "../Models/CustomerProfileModel.js";
 
 import nodemailer from "nodemailer";
 import bcrypt from "bcryptjs";
@@ -56,13 +58,13 @@ const verifyOtp = async (email, otp) => {
 };
 
 const createBookingRequest = async (req, res) => {
-  // Correct mapping from frontend fields
   const { workerEmail, serviceType, expectedTime, serviceAddress } = req.body;
-
   const customerId = req.user._id;
+
   try {
-    // 1️⃣ Validate fields
-    if (!workerEmail || !customerId || !serviceType || !expectedTime || !serviceAddress) {
+    /* ---------------- VALIDATION ---------------- */
+
+    if (!workerEmail || !serviceType || !expectedTime || !serviceAddress) {
       return res.status(400).json({
         success: false,
         message: "All fields are required"
@@ -71,7 +73,6 @@ const createBookingRequest = async (req, res) => {
 
     const { fullAddress, city, pincode, landmark, state, lat, lng } = serviceAddress;
 
-    // 2️⃣ Validate address fields
     if (!fullAddress || !city || !pincode) {
       return res.status(400).json({
         success: false,
@@ -79,8 +80,8 @@ const createBookingRequest = async (req, res) => {
       });
     }
 
+    /* ---------------- CUSTOMER CHECK ---------------- */
 
-    // 2️⃣ Check customer exists
     const customer = await userModel.findById(customerId);
     if (!customer) {
       return res.status(404).json({
@@ -88,27 +89,86 @@ const createBookingRequest = async (req, res) => {
         message: "Customer not found"
       });
     }
+const requestedStartTime = new Date(expectedTime);
 
-    // 3️⃣ Find worker using email
-    const worker = await userModel.findOne({ email: workerEmail });
-    if (!worker) {
+if (isNaN(requestedStartTime.getTime())) {
+  return res.status(400).json({
+    success: false,
+    message: "Invalid start time"
+  });
+}
+
+const now = new Date();
+
+// Must be future
+if (requestedStartTime <= now) {
+  return res.status(400).json({
+    success: false,
+    message: "Start time must be in the future"
+  });
+}
+
+// Must be 1 hour ahead
+const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+
+if (requestedStartTime < oneHourFromNow) {
+  return res.status(400).json({
+    success: false,
+    message: "Start time must be at least 1 hour from now"
+  });
+}
+
+
+    /* ---------------- FIND USER BY EMAIL ---------------- */
+
+    const workerUser = await userModel.findOne({ email: workerEmail });
+
+    if (!workerUser || workerUser.role !== "worker") {
       return res.status(404).json({
         success: false,
         message: "Worker not found"
       });
     }
 
-    if (worker.isFree) {
+    /* ---------------- FIND WORKER PROFILE ---------------- */
+
+    const worker = await workerModel.findOne({ userId: workerUser._id });
+
+    if (!worker) {
       return res.status(404).json({
+        success: false,
+        message: "Worker profile not found"
+      });
+    }
+
+    /* ---------------- AVAILABILITY CHECK ---------------- */
+
+    if (!worker.isFree) {
+      return res.status(400).json({
         success: false,
         message: "Worker is not available currently"
       });
     }
 
-    // 4️⃣ Create booking
+    const existingBooking = await Booking.findOne({
+      customerId,
+      workerId: worker.userId,
+      status: { $in: ["requested", "accepted", "in_progress"] }
+    });
+
+    if (existingBooking) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have an active booking with this worker"
+      });
+    }
+
+
+    /* ---------------- CREATE BOOKING ---------------- */
+
     const booking = new Booking({
       customerId,
-      workerId: worker._id,
+      workerId: worker.userId,   // ✅ CORRECT
       serviceType,
       startTime: new Date(expectedTime),
       status: "requested",
@@ -119,10 +179,7 @@ const createBookingRequest = async (req, res) => {
         city,
         state,
         pincode,
-        location: {
-          lat,
-          lng
-        }
+        location: { lat, lng }
       }
     });
 
@@ -135,7 +192,7 @@ const createBookingRequest = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Booking Step 1 Error:", error);
+    console.error("Booking Error:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while creating booking"
@@ -163,7 +220,27 @@ const createAdvancePayment = async (req,res) => {
       });
     }
     
-    // 4️⃣ Decide advance amount (30%)
+
+    const requestedStartTime = new Date(startTime);
+
+    if (isNaN(requestedStartTime.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid start time"
+      });
+    }
+
+    // Booking creation time + 1 hour
+    const minimumAllowedTime = new Date(booking.createdAt.getTime() + 60 * 60 * 1000);
+
+    if (requestedStartTime < minimumAllowedTime) {
+      return res.status(400).json({
+        success: false,
+        message: "Start time must be at least 1 hour after booking request"
+      });
+    }
+    
+    // 4️⃣ Decide advance amount (20%)
     const advanceAmount = Math.round(totalAmount * 0.2);
 
     // 3️⃣ Update booking details
@@ -174,7 +251,11 @@ const createAdvancePayment = async (req,res) => {
     booking.status = "accepted"
     await booking.save();
 
-    
+    await workerModel.findOneAndUpdate(
+      { userId: booking.workerId },
+      { isFree: false }
+    );
+
 
     // 5️⃣ Create Razorpay order
     const order = await razorpayInstance.orders.create({
@@ -214,7 +295,7 @@ const createAdvancePayment = async (req,res) => {
   }
 };
 
-const  sendArrivalVerificationOtp = async (req, res) => {
+const sendArrivalVerificationOtp = async (req, res) => {
     const { bookingId } = req.body;
 
     try {
@@ -290,4 +371,299 @@ const verifyCompletionOtpAndFinishWork= async (req, res) => {
   }
 };
 
-export { createBookingRequest, createAdvancePayment, sendArrivalVerificationOtp, verifyArrivalOtpAndStartWork, sendWorkCompletionOtp, verifyCompletionOtpAndFinishWork };
+const payRemainingAmount = async (req, res) => {
+  try {
+    const { bookingId, paymentMethod } = req.body;
+
+    if (!bookingId || !paymentMethod) {
+      return res.status(400).json({ success: false, message: "Booking ID and payment method are required" });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.status !== "work_done") {
+      return res.status(400).json({ success: false, message: "Work not completed yet" });
+    }
+
+    const remainingAmount = booking.remainingAmount;
+    if (remainingAmount <= 0) {
+      return res.status(400).json({ success: false, message: "No remaining amount to pay" });
+    }
+
+    await workerModel.findOneAndUpdate(
+      { userId: booking.workerId },
+      { isFree: true }
+    );
+
+
+    // ✅ ONLY create order — DO NOT PAY WORKER HERE
+    const order = await razorpayInstance.orders.create({
+      amount: remainingAmount * 100,
+      currency: "INR",
+      receipt: `booking_remaining_${bookingId}`,
+      payment_capture: 1
+    });
+
+    const payment = await paymentModel.create({
+      bookingId,
+      amount: remainingAmount,
+      type: "remaining",
+      paymentMethod,
+      razorpayOrderId: order.id,
+      receipt: order.receipt,
+      paymentStatus: "pending"
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Remaining payment order created",
+      orderId: order.id,
+      amount: remainingAmount,
+      currency: "INR"
+    });
+
+  } catch (error) {
+    console.error("Error creating remaining payment:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+const cancelBooking = async (req, res) => {
+  try {
+    const { bookingId } = req.body;
+    const userId = req.user._id;
+
+    if (!bookingId) {
+      return res.status(400).json({ success: false, message: "Booking ID required" });
+    }
+
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    if (booking.status === "cancelled") {
+      return res.status(400).json({ success: false, message: "Booking already cancelled" });
+    }
+
+    await workerModel.findOneAndUpdate(
+      { userId: booking.workerId },
+      { isFree: true }
+    );
+
+
+    // Get advance payment record
+    const payment = await paymentModel.findOne({ bookingId, type: "advance", paymentStatus: "success" });
+    if (!payment) {
+      return res.status(400).json({ success: false, message: "No successful advance payment found" });
+    }
+
+    const advanceAmount = payment.amount;
+    let workerShare = 0;
+    let customerRefund = 0;
+
+    const now = new Date();
+    const acceptedTime = booking.startTime; // when booking was accepted
+    const diffMinutes = (now - acceptedTime) / (1000 * 60);
+
+    // Identify who is cancelling
+    const isCustomer = booking.customerId.toString() === userId.toString();
+    const isWorker = booking.workerId.toString() === userId.toString();
+
+    if (!isCustomer && !isWorker) {
+      return res.status(403).json({ success: false, message: "Not authorized to cancel this booking" });
+    }
+
+    // 🔹 Worker Cancels → Full refund to customer
+    if (isWorker) {
+      workerShare = 0;
+      customerRefund = advanceAmount;
+    }
+
+    // 🔹 Customer Cancels → Time-based split
+    if (isCustomer) {
+      if (diffMinutes <= 30) {
+        workerShare = advanceAmount * 0.10;
+        customerRefund = advanceAmount * 0.90;
+      } else if (diffMinutes <= 60) {
+        workerShare = advanceAmount * 0.20;
+        customerRefund = advanceAmount * 0.80;
+      } else {
+        workerShare = 0;
+        customerRefund = advanceAmount;
+      }
+    }
+
+    // 💰 REFUND TO CUSTOMER
+    if (customerRefund > 0) {
+          await razorpayInstance.payments.refund(payment.razorpayPaymentId, {
+            amount: Math.round(customerRefund * 100)
+          });
+        }
+
+        // 💸 PAYOUT TO WORKER (only if share > 0)
+    if (workerShare > 0) {
+      // // 1️⃣ Get worker's bank details
+      // const workerBank = await workerBankModel.findOne({ userId: booking.workerId });
+
+      // if (!workerBank || !workerBank.razorpayFundAccountId) {
+      //   return res.status(400).json({
+      //     success: false,
+      //     message: "Worker bank details not available for payout"
+      //   });
+      // }
+
+      // // 2️⃣ Create payout to worker
+      // const payout = await razorpayX.payouts.create({
+      //   account_number: process.env.RAZORPAYX_ACCOUNT_NUMBER, // Your RazorpayX account number
+      //   fund_account_id: workerBank.razorpayFundAccountId,
+      //   amount: Math.round(workerShare * 100), // in paise
+      //   currency: "INR",
+      //   mode: "IMPS",
+      //   purpose: "payout",
+      //   queue_if_low_balance: true,
+      //   reference_id: booking._id.toString(),
+      //   narration: "WorkWiz cancellation compensation"
+      // });
+
+      // console.log("Worker payout successful:", payout.id);
+      console.log(`${workerShare} This amount should be paid to the worker manually `);
+    }
+
+
+    booking.status = "cancelled";
+    await booking.save();
+
+    payment.paymentStatus = "refunded";
+    await payment.save();
+
+    res.status(200).json({
+      success: true,
+      message: "Booking cancelled and refund processed",
+      workerShare,
+      customerRefund
+    });
+
+  } catch (error) {
+    console.error("Cancel Booking Error:", error);
+    res.status(500).json({ success: false, message: "Server error during cancellation" });
+  }
+};
+
+const getRequestedBookings = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const { role } = req.body;
+
+    if (!role) {
+      return res.status(400).json({
+        success: false,
+        message: "Role is required",
+      });
+    }
+
+    /* ---------------- BUILD QUERY ---------------- */
+
+    let query = { status: "requested" };
+
+    if (role === "customer") {
+      query.customerId = userId;
+    } else if (role === "worker") {
+      query.workerId = userId;
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid role",
+      });
+    }
+
+    /* ---------------- FETCH BOOKINGS ---------------- */
+
+    const bookings = await Booking.find(query)
+      .populate({
+        path: role === "customer" ? "workerId" : "customerId",
+        select: "_id",
+      })
+      .select("_id serviceType workerId customerId");
+
+    if (!bookings.length) {
+      return res.status(200).json({
+        success: true,
+        bookings: [],
+      });
+    }
+
+    /* ---------------- COLLECT PROFILE IDS ---------------- */
+
+    const otherUserIds = bookings.map((booking) =>
+      role === "customer"
+        ? booking.workerId?._id
+        : booking.customerId?._id
+    );
+
+    /* ---------------- LOAD PROFILES IN ONE QUERY ---------------- */
+
+    let profiles;
+    let profileMap = {};
+
+    if (role === "customer") {
+      profiles = await workerModel.find({
+        userId: { $in: otherUserIds },
+      }).select("userId name");
+    } else {
+      profiles = await customerProfileModel.find({
+        userId: { $in: otherUserIds },
+      }).select("userId name");
+    }
+
+    profiles.forEach((profile) => {
+      profileMap[profile.userId.toString()] = profile.name;
+    });
+
+    /* ---------------- FORMAT RESPONSE ---------------- */
+
+    const formattedBookings = bookings.map((booking) => {
+      const otherUser =
+        role === "customer" ? booking.workerId : booking.customerId;
+
+      const name =
+        profileMap[otherUser?._id?.toString()] ||
+        (role === "customer" ? "Unknown Worker" : "Unknown Customer");
+
+      return {
+        bookingId: booking._id,
+        serviceType: booking.serviceType,
+
+        ...(role === "customer"
+          ? {
+              workerId: otherUser?._id,
+              workerName: name,
+            }
+          : {
+              customerId: otherUser?._id,
+              customerName: name,
+            }),
+      };
+    });
+
+    /* ---------------- RESPONSE ---------------- */
+
+    res.status(200).json({
+      success: true,
+      bookings: formattedBookings,
+    });
+  } catch (error) {
+    console.error("Get Requested Bookings Error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch requested bookings",
+    });
+  }
+};
+
+
+export { createBookingRequest, createAdvancePayment, sendArrivalVerificationOtp, verifyArrivalOtpAndStartWork, sendWorkCompletionOtp, verifyCompletionOtpAndFinishWork, payRemainingAmount, cancelBooking, getRequestedBookings };

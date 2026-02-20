@@ -14,7 +14,6 @@ const auth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const user = await userModel.findById(decoded.userId).select("-password");
 
     if (!user) {
@@ -26,6 +25,7 @@ const auth = async (req, res, next) => {
   } catch (error) {
     console.error("Auth error:", error.message);
     res.status(401).json({ message: "Not authorized, token failed" });
+    console.log("Hiiii")
   }
 };
 

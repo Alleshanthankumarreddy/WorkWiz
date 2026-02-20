@@ -1,41 +1,40 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import axios from "axios";
 import {
   Mail,
   Lock,
-  User,
   Briefcase,
-  ChevronDown,
   ArrowLeft,
   Sparkles,
   Shield,
   Zap,
+  Eye,
+  EyeOff,
 } from "lucide-react";
-import { useDispatch, useSelector } from "react-redux";
+import { useDispatch } from "react-redux";
 import { GoogleLogin } from "@react-oauth/google";
 import { useNavigate } from "react-router-dom";
-
-import OTPInput from "../components/SignupComponents/OTPinput";
-import { generateToken } from "../notifications/firebase";
 import { setCredentials } from "../redux/slices/authSlice";
 
 const Signup = () => {
   const [step, setStep] = useState(1);
   const [role, setRole] = useState("customer");
   const [email, setEmail] = useState("");
-  const [otp, setOtp] = useState("");
+  const [otp, setOtp] = useState(Array(6).fill(""));
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-
+  /* ---------------- SEND OTP ---------------- */
   const sendOtp = async () => {
     if (!email) return alert("Enter email");
+
     try {
       setLoading(true);
-      await axios.post(`http://localhost:5000/api/auth/sendotp`, { email });
+      await axios.post("http://localhost:5000/api/auth/sendotp", { email });
       setStep(2);
       alert("OTP sent to your email");
     } catch (err) {
@@ -45,54 +44,58 @@ const Signup = () => {
     }
   };
 
+  /* ---------------- EMAIL SIGNUP ---------------- */
   const signupWithEmail = async () => {
-  if (otp.length !== 6 || !password) {
-    return alert("Enter valid OTP and password");
-  }
+    if (otp.join("").length !== 6 || !password) {
+      return alert("Enter valid OTP and password");
+    }
 
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    const res = await axios.post(`http://localhost:5000/api/auth/signup`, {
-      email,
-      otp,
-      password,
-      role,
-    });
+      const res = await axios.post("http://localhost:5000/api/auth/signup", {
+        email,
+        otp: otp.join(""),
+        password,
+        role,
+      });
 
-    const { token, role: userRole, user } = res.data;
+      const { token, role: userRole, user } = res.data;
 
-    // ✅ Save auth in Redux
-    dispatch(setCredentials({ user, token, role: userRole }));
-;
+      dispatch(setCredentials({ user, token, role: userRole }));
+      alert("Signup successful 🎉");
+      if (userRole === "customer") {
+        navigate("/customerprofilesetup");
+      } else if (userRole === "worker") {
+        navigate("/workerprofilesetup");
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || "Signup failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    alert("Signup successful 🎉");
-
-    navigate("/");
-
-  } catch (err) {
-    console.error("Signup error:", err); // 👈 ADD THIS FOR DEBUGGING
-    alert(err.response?.data?.message || "Signup failed");
-  } finally {
-    setLoading(false);
-  }
-};
-
-
+  /* ---------------- GOOGLE SIGNUP ---------------- */
   const googleSignup = async (credential) => {
     try {
       setLoading(true);
 
-      const res = await axios.post(`http://localhost:5000/api/auth/google`, {
-        token: credential,
-        role,
-      });
+      const res = await axios.post(
+        "http://localhost:5000/api/auth/google",
+        {
+          token: credential,
+          role,
+        }
+      );
 
-      const { token, role, user } = res.data;
-
-      dispatch(setCredentials({ user, token, role }));
-
-
+      const { token, role: userRole, user } = res.data;
+      dispatch(setCredentials({ user, token, role: userRole }));
+      if (userRole === "customer") {
+        navigate("/customerprofilesetup");
+      } else if (userRole === "worker") {
+        navigate("/workerprofilesetup");
+      }
     } catch (err) {
       alert(err.response?.data?.message || "Google signup failed");
     } finally {
@@ -100,123 +103,164 @@ const Signup = () => {
     }
   };
 
+  /* ---------------- OTP INPUT HANDLERS ---------------- */
+  const handleOtpChange = (index, value) => {
+    if (!/^\d?$/.test(value)) return;
+    
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+    
+    // Auto-focus next input
+    if (value && index < 5) {
+      const nextInput = document.getElementById(`otp-${index + 1}`);
+      if (nextInput) nextInput.focus();
+    }
+  };
+
+  const handleKeyDown = (index, e) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      document.getElementById(`otp-${index - 1}`).focus();
+    }
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 bg-gray-100 relative">
-      <div className="absolute top-10 left-10 w-72 h-72 bg-indigo-300/30 rounded-full blur-3xl" />
-      <div className="absolute bottom-10 right-10 w-96 h-96 bg-pink-300/30 rounded-full blur-3xl" />
-
-      <div className="w-full max-w-md bg-white/80 backdrop-blur border border-gray-200 rounded-3xl shadow-xl p-8 space-y-6 z-10">
-        <div className="text-center space-y-3">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-indigo-600 shadow-lg">
-            <Briefcase className="w-8 h-8 text-white" />
+    <div className="min-h-screen flex items-center justify-center p-4 bg-[#F9F7F7]">
+      <div className="w-full max-w-md">
+        {/* Header */}
+        <div className="text-center mb-8">
+          <div className="flex justify-center mb-6">
+            <div className="w-20 h-20 rounded-2xl bg-[#112D4E] flex items-center justify-center">
+              <Briefcase className="w-10 h-10 text-white" />
+            </div>
           </div>
-          <h1 className="text-3xl font-extrabold text-gray-900">
-            Work<span className="text-indigo-600">Wiz</span>
+          <h1 className="text-4xl font-bold text-[#112D4E]">
+            Work<span className="text-[#3F72AF]">Wiz</span>
           </h1>
-          <p className="text-sm text-gray-500">
-            Create your account to get started
-          </p>
+          <p className="text-[#3F72AF] mt-2">Join thousands of professionals</p>
         </div>
 
-        <div className="flex justify-center gap-2 flex-wrap">
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
-            <Zap className="w-3 h-3" /> Fast
-          </span>
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-            <Shield className="w-3 h-3" /> Secure
-          </span>
-          <span className="flex items-center gap-1 px-3 py-1.5 rounded-full bg-pink-100 text-pink-700 text-xs font-medium">
-            <Sparkles className="w-3 h-3" /> Premium
-          </span>
-        </div>
-
-        {/* Role Select */}
-        <div className="space-y-2">
-          <label className="text-sm font-semibold text-gray-700">
-            Continue as
-          </label>
-          <div className="relative">
-            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-            <select
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-              className="w-full appearance-none bg-gray-50 border-2 border-gray-300 rounded-xl pl-12 pr-12 py-4 font-medium text-gray-900 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200"
-            >
-              <option value="customer">Customer</option>
-              <option value="worker">Worker</option>
-            </select>
-            <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+        {/* Card */}
+        <div className="rounded-2xl shadow-xl p-8 space-y-6 bg-[#DBE2EF]">
+          {/* Features */}
+          <div className="flex justify-center gap-3">
+            {[Zap, Shield, Sparkles].map((Icon, i) => (
+              <span
+                key={i}
+                className="flex font-bold items-center gap-2 px-3 py-2 rounded-full bg-[#F9F7F7] text-[#3F72AF] text-sm"
+              >
+                <Icon className="w-4 h-4" /> {["Fast", "Secure", "Premium"][i]}
+              </span>
+            ))}
           </div>
-        </div>
-
-        {/* STEP 1 */}
-        {step === 1 && (
-          <div className="space-y-5">
-            <div className="relative">
-              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full bg-gray-50 border-2 border-gray-300 rounded-xl pl-12 pr-4 py-4 text-gray-900 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-200"
-              />
+          
+          {/* Role selector */}
+          <div>
+            <h1 className="text font-semibold text-[#112D4E]">
+              Create account as a
+            </h1>
+            <div className="flex gap-4 mt-3">
+              {["customer", "worker"].map((r) => (
+                <button
+                  key={r}
+                  onClick={() => setRole(r)}
+                  type="button"
+                  className={`flex-1 py-4 rounded-xl font-semibold border-2 transition ${
+                    role === r
+                      ? "bg-[#3F72AF] text-white border-white"
+                      : "bg-[#F9F7F7] text-[#112D4E]"
+                  }`}
+                >
+                  {r === "customer" ? "👤 Customer" : "🔧 Worker"}
+                </button>
+              ))}
             </div>
-
-            <button
-              onClick={sendOtp}
-              disabled={loading || !email}
-              className="w-full py-4 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 transition disabled:opacity-50"
-            >
-              {loading ? "Sending OTP..." : "Send OTP"}
-            </button>
           </div>
-        )}
 
-        {/* STEP 2 */}
-        {step === 2 && (
-          <div className="space-y-5">
-            <button
-              onClick={() => setStep(1)}
-              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900"
-            >
-              <ArrowLeft className="w-4 h-4" /> Back
-            </button>
+          
 
-            <OTPInput length={6} value={otp} onChange={setOtp} />
+          {/* STEP 1 */}
+          {step === 1 && (
+            <>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-[#3F72AF]" />
+                <input
+                  type="email"
+                  placeholder="name@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full pl-12 py-4 rounded-xl bg-white"
+                />
+              </div>
 
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="password"
-                placeholder="Create password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-gray-50 border-2 border-gray-300 rounded-xl pl-12 pr-4 py-4 text-gray-900 focus:border-green-500 focus:ring-4 focus:ring-green-200"
-              />
-            </div>
+              <button
+                onClick={sendOtp}
+                disabled={loading || !email}
+                className="w-full py-4 rounded-xl bg-[#3F72AF] text-white font-bold"
+              >
+                {loading ? "Sending OTP..." : "Send OTP"}
+              </button>
 
-            <button
-              onClick={signupWithEmail}
-              disabled={loading || otp.length !== 6 || !password}
-              className="w-full py-4 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition disabled:opacity-50"
-            >
-              {loading ? "Creating account..." : "Create Account"}
-            </button>
-          </div>
-        )}
+              <div className="flex justify-center">
+                <GoogleLogin
+                  onSuccess={(res) => googleSignup(res.credential)}
+                  onError={() => alert("Google signup failed")}
+                />
+              </div>
+            </>
+          )}
 
-        <div className="flex items-center gap-4">
-          <div className="flex-grow h-px bg-gray-300" />
-          <span className="text-xs text-gray-500 uppercase">or</span>
-          <div className="flex-grow h-px bg-gray-300" />
-        </div>
+          {/* STEP 2 */}
+          {step === 2 && (
+            <>
+              <button
+                onClick={() => setStep(1)}
+                className="flex items-center gap-2 text-[#3F72AF]"
+              >
+                <ArrowLeft className="w-4 h-4" /> Back
+              </button>
 
-        <div className="flex justify-center">
-          <GoogleLogin
-            onSuccess={(res) => googleSignup(res.credential)}
-            onError={() => alert("Google Login Failed")}
-          />
+              <div className="flex justify-between gap-2">
+                {otp.map((digit, i) => (
+                  <input
+                    key={i}
+                    id={`otp-${i}`}
+                    value={digit}
+                    maxLength="1"
+                    onChange={(e) => handleOtpChange(i, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(i, e)}
+                    className="w-12 h-12 text-center text-xl rounded-xl bg-white"
+                  />
+                ))}
+              </div>
+
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-[#3F72AF]" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Create password"
+                  className="w-full pl-12 pr-12 py-4 rounded-xl bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2"
+                >
+                  {showPassword ? <EyeOff /> : <Eye />}
+                </button>
+              </div>
+
+              <button
+                onClick={signupWithEmail}
+                disabled={loading}
+                className="w-full py-4 rounded-xl bg-[#112D4E] text-white font-bold"
+              >
+                {loading ? "Creating account..." : "Create Account"}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

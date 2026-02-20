@@ -4,18 +4,21 @@ import {BrowserRouter} from 'react-router-dom'
 import React from 'react'
 import { GoogleOAuthProvider } from '@react-oauth/google'
 import { Provider } from 'react-redux'
+import { PersistGate } from "redux-persist/integration/react"
 
 import App from './App.jsx'
 import './index.css'
-import { store } from "./redux/store";
+import { store,  persistor } from "./redux/store";
 
 
 createRoot(document.getElementById('root')).render(
   <Provider store={store}>
-    <GoogleOAuthProvider clientId="77374391142-iiogg9jhgiahle2ao0aj731ju270d3fd.apps.googleusercontent.com">
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </GoogleOAuthProvider>
+    <PersistGate loading={null} persistor={persistor}>
+      <GoogleOAuthProvider clientId="957259333389-4r7eh038ltnbmh0ql70b8q6gnhatk3b0.apps.googleusercontent.com">
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </GoogleOAuthProvider>
+    </PersistGate>
   </Provider>
 )

@@ -13,13 +13,20 @@ import Home from "./pages/Home";
 import { setFcmToken } from "./redux/slices/notificationSlice";
 import { generateToken } from "./notifications/firebase";
 import CustomerProfileDetails from "./pages/CustomerProfileDetails";
-import CustomerProfilePage from "./pages/CustomerProfile";
+import CustomerProfilePage from "./pages/CustomerProfilePage";
 import WorkerProfileDetails from "./pages/WorkerProfileDetails";
 import ChatPage from "./pages/ChatPage";
+import CustomerProfileSetup from "./pages/CustomerProfileSetup";
+import WorkerProfileSetup from "./pages/WorkerProfileSetup";
+import WorkerProfilePage from "./pages/WorkerProfilePage";
+import ViewAllWorkers from "./pages/ViewAllWorkers";
+import ViewWorkerProfile from "./pages/ViewWorkerProfile";
+import CreateBookingForm from "./pages/CreateBookingForm";
+import AppLayout from "./pages/AppLayout";
+import CreateQuoteForm from "./pages/CreateQuoteForm";
 
 
 function App() {
-   const dispatch = useDispatch();
 
   const { user, role } = useSelector((state) => state.auth); // ⭐ GET USER HERE
 
@@ -33,18 +40,25 @@ function App() {
 
 
 
+
   return (
     <>
       <Toaster position="top-right" />
       <Routes>
-        <Route path="/" element={<Home />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/signin" element={<Signin />} />
-        <Route path="/customerprofiledetails" element={<CustomerProfileDetails />} />
-        <Route path="/customerprofile" element={<CustomerProfilePage />} />
-        <Route path="/workerprofiledetails" element={<WorkerProfileDetails />} />
+        <Route path="/chat/:bookingId" element={<ChatPage />} />
 
-        <Route
+        {/* <Route path="/customerprofiledetails" element={<CustomerProfileDetails />} /> */}
+        {/* <Route path="/customerprofile" element={<CustomerProfilePage />} /> */}
+       {/* < Route path="/workerprofiledetails" element={<WorkerProfileDetails />} /> */}
+        {/* <Route path="/workerprofile" element={<WorkerProfilePage/>}/>
+        <Route path="/customerprofilesetup" element={<CustomerProfileSetup/>}/>
+        <Route path="/workerprofilesetup" element={<WorkerProfileSetup/>}/>
+        <Route path="/viewworkerprofile/:workerId" element={<ViewWorkerProfile/>}/>
+        <Route path="/viewallworkerprofiles" element={<ViewAllWorkers/>}/>
+        <Route path="/createbookingform/:workerEmail" element= {<CreateBookingForm/>}/> */}
+        {/* <Route
           path="/chat"
           element={
             user ? (
@@ -56,7 +70,20 @@ function App() {
               <div>Please login to access chat</div>
             )
           }
-        />
+        /> */}
+
+        <Route element={<AppLayout />}>
+
+          <Route path="/" element={<Home />} />
+          <Route path="/customerprofile" element={<CustomerProfilePage />} />
+          <Route path="/workerprofile" element={<WorkerProfilePage />} />
+          <Route path="/customerprofilesetup" element={<CustomerProfileSetup />} />
+          <Route path="/workerprofilesetup" element={<WorkerProfileSetup />} />
+          <Route path="/viewworkerprofile/:workerId" element={<ViewWorkerProfile />} />
+          <Route path="/viewallworkerprofiles" element={<ViewAllWorkers />} />
+          <Route path="/createbookingform/:workerEmail" element={<CreateBookingForm />} />
+        </Route>
+        <Route path="/createquoteform" element={ <CreateQuoteForm/>}/>
       </Routes>
     </>
   );

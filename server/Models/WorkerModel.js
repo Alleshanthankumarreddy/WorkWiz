@@ -64,7 +64,13 @@ const workerSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
       required: true,
-    }
+    },
+
+    skills: {
+      type: [String],
+      default: [],
+    },
+
   },
   { timestamps: true }
 );
